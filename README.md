@@ -1,166 +1,147 @@
 # voice-role-splitter
 
-Split a folder of character voice lines into roles: speaker-embedding clustering, **human
-confirmation in the browser**, calibrated re-scoring of the leftovers, and export into
-`roles/<role>/<tone>/<file>.wav`.
+把一堆角色语音按**角色**分好：声纹嵌入聚类 → 人在浏览器里确认命名 → 对剩下没认领的做**经过标定的**二次归属 → 导出成 `roles/<角色>/<语气>/<文件>.wav`。
 
-Built for the case where naive speaker clustering quietly fails: expressive dialogue
-(shouting, whispering, crying, 0.5 s interjections) where the embedding space is dominated
-by *speaking style* rather than *identity*. Measured on a 7,055-line / 6.7 h anime game
-corpus, a single centroid per role recovers the held-out role for only **15.3 %** of files
-- chance level for 6 roles. This tool therefore never asks a model to name roles. It asks
-the model to group, the human to name, and only then re-uses the model for the leftovers -
-with the accuracy of each operating point measured on the human's own confirmations.
+[中文](README.md) | [English](README.en.md)
+
+![tests](https://github.com/Ikaros-521/voice-role-splitter/actions/workflows/tests.yml/badge.svg)
+
+## 为什么不是"跑个聚类就完事"
+
+这类工具常见的做法是：声纹嵌入 → 聚类 → 把每个簇当成一个角色。我在 7,055 条 / 6.7 小时 / 6 个角色的日语动画游戏台词上实测过，这条路是错的：
+
+- **一个角色一个质心 = 瞎猜。** 用人工确认过的簇做留一法验证，角色判对率只有 **15.3%**，而 6 个角色随机猜的基线是 16.7%。
+- **簇不等于角色。** 同一个角色被拆成 7 簇、另一个被拆成 5 簇——嵌入空间里占主导的是**说话方式/情绪**（喊叫、低语、哭腔、半秒语气词），不是身份。
+- **文件序号不是先验。** 资源包里相邻条目看着像同一人（MFCC 相似度 0.552 vs 随机 0.002），但音高一测就推翻：相邻两条中位 F0 差 **78 Hz**，随机对 **88 Hz**，基本没差别。那是同场景、同录音链造出来的假信号。
+
+所以这个工具的定位是：**模型负责"像不像"，人负责"是谁"**；之后模型只在有实测准确率支撑的边际区间内，去补那些没人认领的文件。每一步的质量数字都来自你自己的数据，不是论文里的平均值。
 
 ```
- vrs embed ──► vrs cluster ──► vrs page clusters ──► human names 17 clusters (~15 min)
+ vrs embed ──► vrs cluster ──► vrs page clusters ──► 人工给 17 个簇命名（约 15 分钟）
                                                               │
  vrs export ◄── vrs refine ◄── vrs apply ◄──── labels_manual.csv
-     │            │  calibrates on the heard files, re-scores only what has no role
+     │            │  用"人亲耳听过的文件"做留一法标定，只补没有角色的
      ▼            ▼
  roles/<角色>/c04_激动喊叫/*.wav      roles_final.csv + review_list.csv
 ```
 
-## Contents
+## 目录
 
-- [Install](#install) · [Quick start](#quick-start) · [The workflow](#workflow)
-- [Outputs](#outputs) · [What the model is good at (measured)](#honest-limits)
-- [Design rules](#design-rules) · [Docs](#docs) · [Data & licensing](#data--licensing)
+- [安装](#安装) · [快速开始](#快速开始) · [工作流](#工作流)
+- [产出物](#产出物) · [能力边界（实测）](#能力边界实测) · [设计红线](#设计红线)
+- [文档](#文档) · [数据与版权](#数据与版权)
 
-## Install
+## 安装
 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e ".[campplus]"                            # core + one backend
-pip install -e ".[dev]"                                 # tests
+pip install -e ".[campplus]"                            # 核心依赖 + 一个声纹后端
+pip install -e ".[dev]"                                 # 跑测试
 ```
 
-Backends are independent and each is optional - install what your environment can reach:
+后端彼此独立、全部可选，装你环境里装得上的那个：
 
-| backend | training data | install extra | notes |
+| 后端 | 训练数据 | 安装 | 说明 |
 |---|---|---|---|
-| `campplus` | Chinese + English (3D-Speaker) | `[campplus]` (funasr) | needs `kaldiio torch_complex omegaconf jaconv jieba` |
-| `ecapa` | English (VoxCeleb) | `[ecapa]` (`speechbrain<1.0`) | 1.x requires torch>=2.4 (`torch.amp`) |
-| `eres2net` | Chinese (3D-Speaker) | `[eres2net]` (modelscope) | heaviest; strongest single model |
+| `campplus` | 中+英（3D-Speaker） | `[campplus]`（funasr） | 还需 `kaldiio torch_complex omegaconf jaconv jieba` |
+| `ecapa` | 英文（VoxCeleb） | `[ecapa]`（`speechbrain<1.0`） | 1.x 需要 torch≥2.4（`torch.amp`） |
+| `eres2net` | 中文（3D-Speaker） | `[eres2net]`（modelscope） | 最重，单模型最强 |
 
-Two independent backbones are the point: cross-backbone agreement is one of the few
-*premise-free* quality signals available, so a second backbone is not a luxury.
-
-Fetch weights (`ecapa` is not auto-downloaded; the mirror rate-limits, so it retries):
+**至少装两个后端**才有意义：跨模型一致性是这条链路里少数不依赖任何假设的质量信号。
 
 ```bash
-vrs backends --run-dir runs/show1              # what is usable, and why not
-vrs backends --run-dir runs/show1 --fetch ecapa
+vrs backends --run-dir runs/show1                # 哪个能用、为什么不能用、缺哪行 pip
+vrs backends --run-dir runs/show1 --fetch ecapa  # 拉权重（镜像常 429 限流，自带重试）
 ```
 
-GPU is optional (CPU works, ~10x slower). Everything is local - no uploads, no API keys.
+GPU 可选（CPU 能跑，慢约 10 倍）。全程本地，不上传、不需要 API key。
 
-## Quick start
+## 快速开始
 
 ```bash
-# 1. one run per dataset; run.yaml is the only hand-edited file
+# 1. 一个数据集一个 run 目录；run.yaml 是唯一需要手改的文件
 vrs init --audio-dir ./wav/voice --run-dir runs/show1 \
          --roles-file examples/cast_sora_no_otoshimono.yaml
 
-vrs status --run-dir runs/show1        # what has been done, what is missing
-vrs probe  --run-dir runs/show1        # count, durations, sample rates
-vrs embed  --run-dir runs/show1        # per-backend embeddings + a health check
-vrs pitch  --run-dir runs/show1        # F0 stats (model-independent QC)
+vrs status  --run-dir runs/show1     # 做到哪一步、还缺什么
+vrs probe   --run-dir runs/show1     # 条数、时长、采样率、<1s 有多少
+vrs embed   --run-dir runs/show1     # 各后端嵌入 + 一次健康检查
+vrs pitch   --run-dir runs/show1     # F0 统计（与模型无关的质检信号）
 vrs cluster --run-dir runs/show1 --ks 8,12,16,20,24
-vrs page clusters --run-dir runs/show1 # 标注.html : name each cluster by ear
+vrs page clusters --run-dir runs/show1   # 标注.html：逐个簇听声命名
 
-# ... open the page, listen, name the clusters, export labels_manual.csv into the run dir
+# …打开页面、听、命名、导出 labels_manual.csv 放进 run 目录
 
-vrs apply  --run-dir runs/show1        # propagate names -> roles.csv
-vrs refine --run-dir runs/show1        # re-score files with no role, calibrated
-vrs page review --run-dir runs/show1   # 待人工.html : leftovers, grouped by suggestion
-vrs export --run-dir runs/show1        # roles/<角色>/c<簇>_<语气>/*.wav (hard links)
+vrs apply  --run-dir runs/show1      # 命名落到每一行 -> roles.csv
+vrs refine --run-dir runs/show1      # 只给"还没有角色"的文件定归属，阈值经标定
+vrs page review --run-dir runs/show1 # 待人工.html：剩下的按建议分组，可整组接受
+vrs export --run-dir runs/show1      # roles/<角色>/c<簇号>_<语气>/*.wav（默认硬链接）
 ```
 
-## Workflow
+## 工作流
 
-| step | artefact | who decides |
+| 步骤 | 产物 | 谁说了算 |
 |---|---|---|
-| `embed` | `embeddings/*.npy`, `meta.npz`, health note | model |
-| `pitch` | `pitch.npz` (median F0, range, voiced fraction) | measurement |
-| `cluster` | `cluster_sweep.csv`, `labels.csv` | model, by `agree_kappa` / `verify_pass` / `f0_disp` / silhouette |
-| `page clusters` | `标注.html` | **human**: one name per cluster |
-| `apply` | `roles.csv`, `review_list.csv` | human naming propagated verbatim |
-| `refine` | `roles_final.csv`, `queue.csv`, `gold_calibration.csv` | model, only inside calibrated margins |
-| `page review` | `待人工.html` | **human**: accept per group, spot-check 25 % |
-| `export` | `roles/…`, `clusters.csv` | mechanical |
+| `embed` | `embeddings/*.npy`、`meta.npz`、健康检查结论 | 模型 |
+| `pitch` | `pitch.npz`（中位 F0、音高跨度、浊音占比） | 测量 |
+| `cluster` | `cluster_sweep.csv`、`labels.csv` | 模型，按 `agree_kappa` / `verify_pass` / `f0_disp` / silhouette |
+| `page clusters` | `标注.html` | **人**：一个簇一个角色名 |
+| `apply` | `roles.csv`、`review_list.csv` | 人的命名原样传播，不改判 |
+| `refine` | `roles_final.csv`、`queue.csv`、`gold_calibration.csv` | 模型，且只在标定过的边际区间内 |
+| `page review` | `待人工.html` | **人**：整组接受 + 抽检 25% |
+| `export` | `roles/…`、`clusters.csv` | 机械操作 |
 
-Every step is idempotent and reads only the run dir, so you can stop after any of them,
-re-run with different parameters, or hand-edit `run.yaml`.
+每步幂等，只读写 run 目录：任何一步之后都能停下、换参数重来、或直接手改 `run.yaml`。
 
-## Outputs
+## 产出物
 
-- **`roles.csv` / `roles_final.csv`** - one row per file: `role`, `cluster`, `own_pct`
-  (typicality inside its cluster), `centroid_score`, `cohesive_margin`, `cross_delta`,
-  `verdict`, `confidence`, `speech_sec`, `f0`, and `text` when transcripts exist.
-- **`review_list.csv`** - the files a careful human should hear, sorted by risk.
-- **`clusters.csv`** - per cluster: file count, median length, loudness percentile, F0
-  median/range, and the generated tone name.
-- **`roles/<角色>/c<簇号>_<语气>/*.wav`** - hard links by default (zero extra disk).
-  `--copy` for independent files; `--flat` to skip the tone sub-folders.
+- **`roles.csv` / `roles_final.csv`**：每行一条语音，含 `role`、`cluster`、`own_pct`（在本簇里的典型程度）、`centroid_score`、`cohesive_margin`、`cross_delta`、`confidence`、`speech_sec`、`f0`；有转写时附 `text`。
+- **`review_list.csv`**：该用耳朵过一遍的文件，按风险排序。
+- **`clusters.csv`**：每个簇的条数、中位时长、响度分位、F0 中位/跨度，以及生成的语气名（依据实测声学量，不是猜的）。
+- **`roles/<角色>/c<簇号>_<语气>/*.wav`**：默认硬链接（不额外占磁盘）；`--copy` 得到可独立编辑的副本，`--flat` 取消语气子层。
 
-## Honest limits
+## 能力边界（实测）
 
-Numbers from the corpus above, 6 named roles, 7,055 files (see
-[docs/METHOD.md](docs/METHOD.md) for how each was obtained):
+上面那个语料（7,055 条 / 6 个角色）的数字，方法见 [docs/METHOD.md](docs/METHOD.md)（暂为英文）：
 
-| claim | measured |
+| 结论 | 实测 |
 |---|---|
-| single centroid per role ≈ guessing | LOO top-1 **0.153** (chance = 0.167) |
-| cluster ≠ role; emotion drives clusters | 1 role split into 7 clusters, another into 5 |
-| top-k scoring, cross-cluster (needs >= 2 clusters/role) | **0.571** overall; 0.84 when margin >= 0.03 |
-| top-k scoring, cohesive (files with no cluster) | 0.87 at margin 0.03-0.06; 0.93 at >= 0.06 |
-| quality of an unsupervised cut | intra-cluster ASV pass 0.71 vs 0.12 for random pairs |
+| 单角色单质心 ≈ 随机 | 留一法 top-1 **0.153**（随机基线 0.167） |
+| 簇≠角色，情绪主导分簇 | 1 个角色被拆成 7 簇，另一个 5 簇 |
+| top-k 判据·跨簇（需该角色≥2 簇） | 整体 **0.571**；边际 ≥0.03 时 **0.84** |
+| top-k 判据·同簇可参照（用于无角色文件） | 边际 0.03–0.06 → **0.87**；≥0.06 → **0.93** |
+| 无监督切分的质量 | 簇内 ASV 通过率 **0.71**，随机对 0.12 |
 
-Consequences built into the tool: `refine` defaults to `only_unassigned` (it will not
-re-shuffle files a human already accepted), `propose` verdicts are *never* applied
-automatically, and calibration is printed on the human's own confirmed files so thresholds
-are chosen from numbers rather than vibes. Roles that live in a single cluster cannot be
-cross-validated at all - the tool says so instead of scoring them.
+由此定下的行为：`refine` 默认 `only_unassigned`（不碰人已确认的），`propose` 永不自动落库，阈值标定直接打印在你亲手听过的文件上。**单簇角色无法跨簇验证**，工具会明说这一点，而不是硬编一个置信度。
 
-Short interjections are the honest hard case: on that corpus 466 of the leftovers had a
-median length of **0.69 s** - some have no measurable pitch at all. Ship them as
-`_未确定/` rather than pretending.
+短句是真正的硬骨头：那批剩余队列里 466 条的中位长度只有 **0.69 秒**，其中 62 条连 F0 都测不出、23 条完全没有声纹向量。这种别硬分，留在 `_未确定/`。
 
-## Design rules
+## 设计红线
 
-1. **WAV in [-1, 1], always.** Both frontends scale internally; feeding int16-magnitude
-   audio inflates every cosine until clustering collapses into one 94 %-of-everything
-   cluster. `audio.read_wav` raises `ScalingError` instead of letting that happen again.
-2. **No positional priors without evidence.** Archive order looked like a speaker prior
-   under MFCC similarity (adjacent 0.55 vs random 0.00) and was falsified by pitch
-   (adjacent |ΔF0| 78 Hz vs random 88 Hz). Nothing in the pipeline uses file order.
-3. **Centroid agreement is meaningless for connectivity clusters** (average linkage), so it
-   is recorded as a column and never used as a risk score.
-4. **Every quality metric must be premise-free or labelled**: cross-backbone kappa,
-   intra-cluster ASV pass rate and pitch spread are; silhouette is reported but demoted.
-5. **Human decisions are terminal.** Models annotate, propose and rank - they do not
-   overwrite.
+1. **喂给后端的音频必须是 [-1, 1] 的 float。** 两个前端内部都会自己缩放；送 int16 量级会让所有余弦虚高（实测均值 0.62 vs 正常 0.40），聚类塌成一个吃掉 94% 数据的大簇——而且各项指标还"看着挺好"。`audio.read_wav` 现在直接抛 `ScalingError`。
+2. **不用任何位置先验。** 文件序号反映的是场景/录音链相似，不是同角色；全流程不看序号。
+3. **平均连接层次簇不是质心球形区域**，所以"某后端最近质心≠所在簇"是方法学必然，只能当参考列，不能当风险分。
+4. **人的判断是终态。** `apply` 原样传播命名；`refine` 默认不碰已命名文件；`propose` 永不自动改判。
+5. **质量指标要么无前提，要么标清楚**：跨模型 κ、簇内 ASV 通过率、簇内音高离散度是无前提的；silhouette 只做参考并降权。
+6. **给人打开的东西一律 UTF-8 BOM**；带中文的 numpy 数组必须 `dtype=object`（定宽 unicode 会静默截断，我踩过）。
+7. **run 目录必须可整目录复制**，所以权重缓存放外面（默认 `~/.cache/vrs/models`）。
 
-## Docs
+## 文档
 
-- [docs/USAGE.md](docs/USAGE.md) - every command, every `run.yaml` key
-- [docs/METHOD.md](docs/METHOD.md) - the pipeline, the measurements, why each choice
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - env/version matrix, downloads, encoding, hangs
-- [CONTRIBUTING.md](CONTRIBUTING.md) - dev setup, the invariants a PR must not break, adding a backbone
-- [examples/](examples) - a cast file and a `labels_manual.csv` in the shape `apply` expects
+- [docs/USAGE.md](docs/USAGE.md) — 每条命令、`run.yaml` 每个字段
+- [docs/METHOD.md](docs/METHOD.md) — 流程、实测数字、为什么这样选
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — 环境版本矩阵、下载限流、编码、卡死排查
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 开发环境、上面这些红线、如何加一个新后端
+- [examples/](examples) — 一份角色表、一份 `apply` 期望的标注导出格式样例
 
 ```bash
-pytest -q            # 44 tests, offline + CPU-only, including a regression for every bug above
+pytest -q     # 44 项，离线 + 纯 CPU，约 1 分钟；上面每个坑都有对应回归用例
 ```
 
-## Data & licensing
+`docs/` 目前只有英文，欢迎翻译 PR。
 
-The tool ships **no audio**. Datasets (`.wav`, embeddings, run outputs, exported role
-folders, generated pages) are git-ignored - and voice lines from a game or anime are
-copyrighted recordings, so publishing labelled role folders of one is a redistribution
-problem even when the tool is MIT. Commit `run.yaml` and a cast YAML if you want to share
-configuration; keep the media local.
+## 数据与版权
 
-MIT licensed; see [LICENSE](LICENSE). CI runs the suite on Linux and Windows, Python 3.10-3.12
-([.github/workflows/tests.yml](.github/workflows/tests.yml)).
+仓库**不含任何音频**。数据相关的一切（`.wav`、嵌入、run 产物、导出的角色文件夹、生成的页面）都在 `.gitignore` 里。工具和示例配置是 MIT；但动画/游戏台词本身是别人录制的版权内容——把标好角色的音频包发出去属于再分发他人作品，跟工具开源是两回事。要分享配置就提交 `run.yaml` 和角色表，音频留在本地。
+
+许可证见 [LICENSE](LICENSE)。CI 在 Linux/Windows × Python 3.10–3.12 上跑测试套件（[.github/workflows/tests.yml](.github/workflows/tests.yml)）。
