@@ -26,7 +26,7 @@ All commands take `--run-dir / -r` (default `runs/default`) and read only that d
 Written by `init`, re-read by every step, safe to hand-edit.
 
 ```yaml
-audio_dir: E:/data/show1/wav          # required, must contain *.wav
+audio_dir: ./audio/lines              # required, must contain *.wav
 run_dir: runs/show1
 sample_rate: 16000                    # everything is resampled to this
 window: 3.0                           # embedding window length (s)

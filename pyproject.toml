@@ -42,8 +42,8 @@ dev = ["pytest>=7", "pytest-cov"]
 vrs = "vrs.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/CHANGE-ME/voice-role-splitter"
-Documentation = "https://github.com/CHANGE-ME/voice-role-splitter/blob/main/docs/USAGE.md"
+Homepage = "https://github.com/Ikaros-521/voice-role-splitter"
+Documentation = "https://github.com/Ikaros-521/voice-role-splitter/blob/main/docs/USAGE.md"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
