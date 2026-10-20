@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__TITLE__</title>
+<style>
+ body{font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:#12141a;color:#e7eaf0}
+ header{position:sticky;top:0;z-index:9;background:#1b1f28;border-bottom:1px solid #2c313c;
+        padding:9px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+ header b{font-size:15px} header .hint{color:#8b93a5;font-size:12px}
+ main{padding:14px 16px 70px;max-width:1180px}
+ .grp{background:#191d26;border:1px solid #2a3040;border-radius:10px;padding:10px 14px;margin:0 0 12px}
+ .grp.sel{border-color:#4c8dff}.grp.done{outline:2px solid #2ecc71}
+ .grp h3{margin:0 0 6px;font-size:15px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+ button{background:#2b3242;color:#e7eaf0;border:1px solid #3d475c;border-radius:6px;padding:4px 9px;
+        cursor:pointer;font-size:13px}
+ button:hover{background:#38415a}
+ select{background:#0f1218;border:1px solid #3d475c;color:#e7eaf0;padding:4px 7px;border-radius:6px;font-size:13px}
+ .row{display:flex;gap:8px;align-items:center;padding:3px 0;border-top:1px solid #232838;flex-wrap:wrap}
+ .row audio{height:28px;width:300px}
+ .row .t{flex:1;min-width:260px;font-size:13px;color:#cfd6e4}
+ .tag{display:inline-block;font-size:11px;color:#a9b3c6;background:#222835;border-radius:8px;
+      padding:1px 6px;margin-left:4px;white-space:nowrap}
+ .row.mark{background:#332a12;border-left:3px solid #e0a03a}
+ .bar{position:sticky;bottom:0;background:#1b1f28;border-top:1px solid #2c313c;padding:8px 16px;
+      font-size:13px;color:#a9b3c6}
+ .bar b{color:#e7eaf0}
+ progress{width:150px;height:9px;vertical-align:middle}
+ .empty{color:#8b93a5;padding:30px}
+ @media (max-width:760px){.row audio{width:190px}}
+</style>
+</head>
+<body>
+<header>
+  <b>__TITLE__</b>
+  <select id="batchRole"></select>
+  <button id="btnBatch">把所选组命名/合并</button>
+  <button id="btnPlaySel">连播所选组</button>
+  <button id="btnExport">导出 __EXPORT_NAME__</button>
+  <span id="prog"></span><progress id="bar" max="1" value="0"></progress>
+  <span class="hint">勾选组左侧方框可批量操作 · 空格=播放/暂停 · 复核模式数字键 1/2/3=是/不是/听不出</span>
+</header>
+<main id="main"><div class="empty">载入中…</div></main>
+<div class="bar" id="sum"></div>
+<script>
+const DATA=__PAYLOAD__;
+const ROLES=DATA.roles, KEY=DATA.storage_key, PER_ITEM=DATA.mode==='items';
+let st=JSON.parse(localStorage.getItem(KEY)||'{}'), picked=new Set(st._g||[]);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const gname=g=>st['g'+g.id]||'';              // group-level role
+const iname=n=>st['i'+n]||'';                 // per-file role override
+
+function opts(sel,extra){
+  let h='<option value="">— 未定 —</option>';
+  const known=new Set(ROLES.map(r=>r[0]));
+  for(const [v,l] of ROLES) h+=`<option value="${esc(v)}"${v===sel?' selected':''}>${esc(l)}</option>`;
+  if(extra&&!known.has(extra)) h+=`<option value="${esc(extra)}"${extra===sel?' selected':''}>${esc(extra)}（模型建议）</option>`;
+  if(sel&&!known.has(sel)&&sel!==extra) h+=`<option value="${esc(sel)}" selected>自定义：${esc(sel)}</option>`;
+  return h;}
+
+function tagHtml(t){return (t||[]).filter(x=>x!=null&&x!=='').map(x=>`<span class="tag">${esc(x)}</span>`).join('')}
+
+function render(){
+  const m=document.getElementById('main'); m.innerHTML='';
+  if(!DATA.groups.length){m.innerHTML='<div class="empty">没有需要确认的分组——所有文件都已确定。</div>';upd();return;}
+  DATA.groups.forEach(g=>{
+    const d=document.createElement('div'); d.className='grp';
+    const decided=items(g).filter(i=>iname(i.file)||gname(g)).length;
+    if(decided>=items(g).length&&items(g).length) d.classList.add('done');
+    if(picked.has(g.id)) d.classList.add('sel');
+    d.dataset.g=g.id;
+    d.innerHTML=`<h3><input type="checkbox" class="pick"${picked.has(g.id)?' checked':''}>
+      ${esc(g.title)}${tagHtml(g.tags)} <span class="tag">试听 ${items(g).length} 段</span>
+      <select class="role">${opts(gname(g)||g.suggested,g.suggested)}</select>
+      <button data-a="accept">整组接受</button><button data-a="sample">抽检25%</button>
+      <button data-a="clear">清除</button><button data-a="play">▶ 连播</button></h3>`;
+    items(g).forEach(i=>{
+      const r=document.createElement('div'); r.className='row';
+      if(st['m'+i.file]) r.classList.add('mark');
+      r.innerHTML=`<audio preload="none" controls src="${esc(i.src)}"></audio>
+        <div class="t">${esc(i.text)||'<i>无台词</i>'}${tagHtml(i.tags)}</div>
+        ${PER_ITEM?`<select data-f="${esc(i.file)}">${opts(iname(i.file)||gname(g)||g.suggested,g.suggested)}</select>
+        <button data-v="yes">是(1)</button><button data-v="no">不是(2)</button><button data-v="unsure">听不出(3)</button>`:''}`;
+      d.appendChild(r);
+      if(PER_ITEM){
+        r.querySelectorAll('button[data-v]').forEach(b=>b.onclick=()=>{
+          st['i'+i.file]= (b.dataset.v==='yes') ? (gname(g)||g.suggested) : b.dataset.v;
+          if(b.dataset.v==='no') st['i'+i.file]='__no__';
+          st['m'+i.file]=undefined; save(); render();});
+        r.querySelector('select').onchange=e=>{const v=e.target.value;
+          if(v) st['i'+i.file]=v; else delete st['i'+i.file]; save(); render();};
+      }
+    });
+    m.appendChild(d);
+    d.querySelector('.pick').onchange=e=>{e.target.checked?picked.add(g.id):picked.delete(g.id);save();render();};
+    d.querySelector('.role').onchange=e=>{const v=e.target.value;
+      if(v) st['g'+g.id]=v; else delete st['g'+g.id]; save(); render();};
+    d.querySelectorAll('button[data-a]').forEach(b=>b.onclick=()=>{
+      const a=b.dataset.a;
+      if(a==='accept'){const r=gname(g)||d.querySelector('.role').value; if(!r)return alert('先选角色');
+        items(g).forEach(i=>st['i'+i.file]=r); st['g'+g.id]=r;}
+      else if(a==='sample'){const r=gname(g)||d.querySelector('.role').value; if(!r)return alert('先选角色');
+        items(g).forEach((i,k)=>{st['i'+i.file]=r; if(k%4===0) st['m'+i.file]=1; else delete st['m'+i.file];});}
+      else if(a==='clear'){items(g).forEach(i=>{delete st['i'+i.file];delete st['m'+i.file];});delete st['g'+g.id];}
+      else if(a==='play'){play(items(g).map(i=>i.src));return;}
+      save(); render();});
+  });
+  upd();
+}
+function items(g){return g.items||[];}
+function play(srcs){document.querySelectorAll('audio').forEach(a=>a.pause());
+  let i=0;const next=()=>{if(i<srcs.length){const a=[...document.querySelectorAll('audio')].find(x=>x.getAttribute('src')===srcs[i++]);
+  if(a){a.currentTime=0;a.onended=next;a.play();}else next();}};next();}
+function save(){st._g=[...picked];localStorage.setItem(KEY,JSON.stringify(st));upd();}
+function upd(){
+  const all=DATA.groups.reduce((a,g)=>a+items(g).length,0);
+  const done=DATA.groups.reduce((a,g)=>a+items(g).filter(i=>iname(i.file)).length,0);
+  document.getElementById('prog').textContent=`已判定 ${done}/${all}`;
+  document.getElementById('bar').value=all?done/all:1;
+  const agg={};
+  DATA.groups.forEach(g=>items(g).forEach(i=>{const v=iname(i.file)||gname(g);if(v&&v!=='__no__')agg[v]=(agg[v]||0)+1;}));
+  document.getElementById('sum').innerHTML=Object.entries(agg).sort((a,b)=>b[1]-a[1])
+    .map(([r,n])=>`<b>${esc(r)}</b> ${n}`).join(' · ')||'尚未判定';}
+function exportCsv(){
+  const rows=[['type','cluster','file','role','verdict']];
+  DATA.groups.forEach(g=>{
+    if(!PER_ITEM){                                  // cluster naming: one row per group
+      rows.push(['cluster',g.id,'',gname(g),'']);
+      return;}
+    items(g).forEach(i=>{
+      const v=iname(i.file);
+      if(v==='__no__'){rows.push(['file',g.id,i.file,'','no']);return;}
+      if(v){rows.push(['file',g.id,i.file,v,'yes']);return;}
+      rows.push(['file',g.id,i.file,'','']);});});
+  DATA.groups.forEach(g=>{                            // cluster rows also carry spot verdicts
+    if(PER_ITEM) return;
+    items(g).filter(i=>st['i'+i.file]).forEach(i=>{
+      const v=st['i'+i.file];
+      rows.push(['file',g.id,i.file,v==='__no__'?'':v,v==='__no__'?'no':'yes']);});});
+  const csv=''+rows.map(r=>r.map(x=>`"${String(x==null?'':x).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=DATA.export_name;a.click();save();}
+document.getElementById('btnExport').onclick=exportCsv;
+document.getElementById('btnBatch').onclick=()=>{
+  const r=document.getElementById('batchRole').value;
+  if(!picked.size)return alert('先勾选要操作的组');
+  if(!r)return alert('先在上方选择角色');
+  DATA.groups.filter(g=>picked.has(g.id)).forEach(g=>{st['g'+g.id]=r;items(g).forEach(i=>st['i'+i.file]=r);});
+  picked.clear();save();render();};
+document.getElementById('btnPlaySel').onclick=()=>{
+  const gs=DATA.groups.filter(g=>picked.has(g.id));
+  play((gs.length?gs:DATA.groups).flatMap(g=>items(g).map(i=>i.src)));};
+document.addEventListener('keydown',e=>{
+  if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;
+  if(e.code==='Space'){e.preventDefault();const p=[...document.querySelectorAll('audio')].find(a=>!a.paused);
+    if(p)p.pause();else{const n=[...document.querySelectorAll('audio')].find(a=>!a.getAttribute('src')||a.currentTime===0);if(n)n.play();}}
+  if(PER_ITEM&&['1','2','3'].includes(e.key)){
+    const row=[...document.querySelectorAll('.row')].find(r=>!st['i'+r.querySelector('select')?.dataset.f]);
+    const b=row&&row.querySelectorAll('button[data-v]')[+e.key-1]; if(b)b.click();}});
+function init(){const b=document.getElementById('batchRole');
+  b.innerHTML='<option value="">— 选择角色 —</option>'+ROLES.map(([v,l])=>`<option value="${esc(v)}">${esc(l)}</option>`).join('');
+  render();}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+</script>
+</body>
+</html>

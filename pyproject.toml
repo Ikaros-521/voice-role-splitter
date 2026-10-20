@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice-role-splitter"
+version = "0.1.0"
+description = "Split a folder of character voice lines into roles: speaker-embedding clustering, human-in-the-loop confirmation, calibrated re-scoring of the leftovers, and per-role/per-tone folder export."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "voice-role-splitter contributors" }]
+keywords = ["speaker-verification", "clustering", "speaker-diarization", "voice-actor", "annotation", "audio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.23,<2.0",
+    "pandas>=1.5",
+    "scipy>=1.9",
+    "scikit-learn>=1.2",
+    "soundfile>=0.12",
+    "librosa>=0.9",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# At least one backend is needed for embedding extraction; they are independent so you
+# can install only the ones your environment can reach.
+campplus = ["funasr>=1.0"]
+ecapa = ["speechbrain>=0.5.16,<1.0"]
+eres2net = ["modelscope>=1.20"]
+asr = ["faster-whisper>=0.10"]
+dev = ["pytest>=7", "pytest-cov"]
+
+[project.scripts]
+vrs = "vrs.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/CHANGE-ME/voice-role-splitter"
+Documentation = "https://github.com/CHANGE-ME/voice-role-splitter/blob/main/docs/USAGE.md"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vrs = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

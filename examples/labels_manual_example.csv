@@ -1,0 +1,11 @@
+type,cluster,file,role,verdict
+cluster,0,,伊卡洛斯,
+cluster,1,,樱井智树,
+cluster,2,,见月楚原,
+cluster,3,,伊卡洛斯,
+cluster,4,,妮姆芙,
+cluster,5,,旁白或系统语音,
+cluster,6,,音效或无人声,
+spot,0,voice_00001.wav,,yes
+spot,2,voice_00007.wav,,no
+file,4,voice_00019.wav,阿斯特蕾亚,yes

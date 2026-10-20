@@ -1,0 +1,15 @@
+# Example dropdown for the annotation page: value is what lands in roles.csv and folder
+# names; label is what the human sees (Japanese name + voice actor helps recognition).
+# Anything not listed is still reachable through the "其他/自定义" entry in the page.
+roles:
+  伊卡洛斯: "イカロス（早見沙織）"
+  樱井智树: "桜井智樹（保志総一朗）"
+  见月楚原: "見月そはら（美名）"
+  妮姆芙: "ニンフ（野水伊織）"
+  阿斯特蕾亚: "アストレア（福原香織）"
+  五月田根美香子: "五月田根美香子（高垣彩陽）"
+  守形英四郎: "守形英四郎（鈴木達央）"
+  见月千仓: "見月千倉"
+  中井公康: "中井公康（イッチー）"
+  旁白或系统语音: "ナレーション / 選択肢"
+  音效或无人声: "効果音・叫びのみ"
