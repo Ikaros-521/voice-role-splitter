@@ -27,11 +27,8 @@ def _href(page: Path, target: Path) -> str:
 
 
 def _roles(cfg):
-    """dropdown entries; run.yaml `roles` is [[value, label], ...]"""
-    rs = [list(x) for x in (cfg.roles or []) if isinstance(x, (list, tuple)) and len(x) == 2]
-    if not rs:
-        rs = [["unresolved", "— 其他/待定 —"]]
-    return rs
+    """the page's dropdown; Config already validated these entries (see vrs.cast)"""
+    return [list(x) for x in cfg.roles]
 
 
 def _num(x):

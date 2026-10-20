@@ -7,6 +7,9 @@ from pathlib import Path
 
 import yaml
 
+from . import cast
+from .cast import CastError
+
 
 class ConfigError(ValueError):
     """Raised for a config a user can fix; the message always says what to change."""
@@ -47,6 +50,16 @@ class Config:
     spot: int = 3
     seed: int = 0
 
+    def __post_init__(self):
+        """roles may be written as a mapping or as pairs; store them as pairs.
+
+        Validated here rather than in validate() because the page is built from this field
+        and a silently dropped entry means a name a human typed is lost."""
+        try:
+            self.roles = cast.normalize(self.roles)
+        except CastError as exc:
+            raise ConfigError(f"roles: {exc}") from exc
+
     # ---------- paths ----------
     @property
     def root(self) -> Path:
@@ -83,7 +96,11 @@ class Config:
         d = Path(self.run_dir)
         d.mkdir(parents=True, exist_ok=True)
         f = d / "run.yaml"
-        f.write_text(yaml.safe_dump(asdict(self), allow_unicode=True, sort_keys=False), "utf-8")
+        data = asdict(self)
+        # written as value: label, which is what a person edits by hand; __post_init__ reads
+        # either form back
+        data["roles"] = {v: l for v, l in self.roles}
+        f.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), "utf-8")
         return f
 
     def validate(self) -> None:
@@ -107,8 +124,6 @@ class Config:
                               "run `vrs backends` to see what is installed")
         if not isinstance(self.ks, (list, tuple)) or any(int(k) < 2 for k in self.ks):
             raise ConfigError(f"every ks entry must be >= 2, got {self.ks}")
-        if not isinstance(self.roles, list) or not self.roles:
-            raise ConfigError("roles must be a non-empty list of [value, label] pairs for the page")
         if getattr(self, "_unknown_keys", None):
             raise ConfigError(f"unknown key(s) in run.yaml: {', '.join(self._unknown_keys)}")
 

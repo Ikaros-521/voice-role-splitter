@@ -59,15 +59,104 @@ roles:                                # dropdown of the annotation page: value -
 `--set ks=[6,8,10]` and `--set center=false` work. Unknown keys and empty lists are
 rejected at `init` rather than discovered three steps later.
 
-## Cast file for the dropdown
+## Cast file (role vocabulary of the annotation page)
+
+`vrs init --roles-file cast.yaml` reads a role table and stores it as `roles:` in `run.yaml`.
+It is the list of names the human gets to pick from, and it is worth 5 minutes of care because
+the names it contains are what ends up on disk.
+
+| field | what it is for |
+|---|---|
+| `value` (left) | the role id. Written verbatim into the `role` column of `roles.csv` / `roles_final.csv`, and used verbatim as the export folder `roles/<value>/…`. Two clusters given the same value **are** one character - that merging is the normal case, since one character usually splits into several clusters by emotion. |
+| `label` (right) | display only: what the dropdown shows. Make it recognisable by ear - original-language name plus voice actor is the combination that works. |
+
+`value` is the one to decide first: renaming a role afterwards means re-exporting, and the
+value is what other tools and scripts will key on.
+
+### The dropdown is a closed list
+
+The page offers `— 未定 —` plus exactly your values; there is no free-text box. That is
+deliberate: a typed name is a brand new role, and `伊卡洛斯` / `イカロス` / `伊卡洛斯（天使）`
+would become three folders for one character, with no way to notice.
+
+So when you hear a character that is missing from the table:
+
+1. add the row to the cast file (or to `roles:` in `run.yaml` - same thing),
+2. re-run `vrs page clusters`,
+3. open the page again: names you already assigned are kept in browser `localStorage`, keyed
+   by run directory + mode, not by the cast file, so nothing you typed is lost,
+4. name that cluster and export the CSV again.
+
+Step 2 is seconds. The one thing that does break old names is re-running `vrs cluster` with
+different parameters, because clusters get renumbered - run `vrs apply` before you re-cluster,
+or expect to re-name.
+
+### Building one from scratch
+
+1. **Get the names, not the audio.** The credited cast from the game's official site, the
+   visual-novel/wiki page (Bangumi / VNDB / MAL), the packaging, or the ISO's own text files
+   if the game ships them. You need every voice actor's name too - that is what disambiguates
+   two similar-sounding girls when you are listening at 2 s per clip.
+2. **Decide the value convention** and hold to it: one language, no decorations. Most people
+   use the name they want to see in the folder tree (e.g. `伊卡洛斯`), and put everything else
+   in the label (`イカロス（早見沙織）`).
+3. **One row per voice, not per character.** Narrator / menu-and-system lines / SFX-only clips
+   each need their own value, or they will pollute a character folder. Two catch-alls at the
+   end of the list are cheap insurance - see `examples/cast_sora_no_otoshimono.yaml`.
+4. **List the secondary characters too.** Better an unused row than a gap that stops a naming
+   session.
+5. **Let `init` check it**: `vrs init --roles-file cast.yaml` prints
+   `roles : N in the page dropdown (…)`, and a bad row fails there with the entry number and
+   the reason instead of surfacing as a broken path three steps later.
+
+Rules enforced on every `value`, because it becomes a directory name:
+
+| rule | why |
+|---|---|
+| no `\ / : * ? " < > \|` or control characters | illegal in a path (keep such characters in the label) |
+| may not start or end with `.` | Windows refuses to create such a folder |
+| non-empty after trimming, ≤ 60 characters | the full value is written to CSV and to the tree |
+| unique ignoring case | `Alice` and `alice` would be one character in two folders |
+| not `未定`, `需复核` or `unresolved` | those are how the pipeline marks "not decided yet"; using one as a role would route the files to `_未确定` |
+
+`未定` itself never appears in your table - the page adds it.
+
+### Accepted shapes
+
+All three read the same way, so a hand-written file and a generated one both work:
 
 ```yaml
-roles:
-  <value written into roles.csv and used as the folder name>: "<label shown in the page>"
+roles:                       # mapping: shortest to write
+  爱丽丝: "アリス（CV）"
+  鲍勃: Bob
 ```
 
-Keep values filesystem-safe and stable - they become directory names. The page also allows
-free text, and exports a UTF-8-BOM CSV (`labels_manual.csv`) which is what `apply` reads.
+```yaml
+roles:                       # pairs: what a script emits
+  - [爱丽丝, "アリス（CV）"]
+  - [鲍勃, Bob]
+```
+
+```yaml
+roles:                       # bare strings: value doubles as the label
+  - 爱丽丝
+  - 鲍勃
+```
+
+A `.json` file with `{"roles": …}` works too, and `vrs init --set 'roles=[[爱丽丝, アリス]]'`
+overrides it in one go. An empty label falls back to the value. Top level may also be a bare
+list, without the `roles:` key.
+
+### Growing the table from a run you already named
+
+The `role` column of `roles.csv` is a cast file waiting to be reused for the next dataset from
+the same series:
+
+```bash
+python -c "import pandas as pd,yaml;d=pd.read_csv('runs/show1/roles.csv',encoding='utf-8-sig');print(yaml.safe_dump({'roles':sorted(set(d.role)-{'未定','需复核'})},allow_unicode=True,sort_keys=False))" > cast.yaml
+```
+
+Fill in the labels (voice actors) afterwards by hand - they are the part that helps the ear.
 
 ## Model weights
 

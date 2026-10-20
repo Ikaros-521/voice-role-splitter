@@ -3,6 +3,38 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), versioning follows SemVer.
 
+## [0.2.0] - 2026-10-20
+
+### Added
+
+- `vrs.cast`: the role table (`--roles-file`, `run.yaml: roles`) now has one parser and one
+  contract. `value` is an identifier - it is written to `roles.csv` and becomes the export
+  folder name - so it is checked at `init`: no path-hostile characters, no leading/trailing
+  `.`, non-empty, ≤ 60 characters, unique ignoring case, and not one of the reserved
+  "not decided yet" markers (`未定` / `需复核` / `unresolved`), which would otherwise have sent
+  every file of that role to `_未确定`. A bad row fails with its entry number and the reason.
+- Three input shapes parse to the same table - `roles: {value: label}`,
+  `roles: [[value, label], ...]`, and a bare list of strings - plus `.json` and `{"roles": ...}`.
+  Previously a bare list produced single-element entries, the page filtered them out, and the
+  dropdown came up with only its fallback entry: a naming session with no names.
+- `docs/USAGE.md` documents how to build the table (where to get the names, why the dropdown is
+  a closed list, what happens when you hear a character that is missing, how to grow the table
+  out of a finished `roles.csv`); the same guide is summarised in both READMEs and in the
+  comments of `examples/cast_sora_no_otoshimono.yaml`.
+
+### Changed
+
+- `run.yaml` writes `roles:` as `value: label` instead of nested pair lists, because that field
+  is meant to be hand-edited. Both forms still load.
+- `vrs init` prints how many roles the page will offer.
+
+### Fixed
+
+- The example cast file and the old docs told you that anything not in the table stays
+  reachable through an "其他/自定义" entry in the page. It does not: the dropdown is a closed
+  list (by design, so a typo cannot create a second folder for one character), and the docs now
+  say so along with the add-a-row-and-regenerate-the-page workflow.
+
 ## [0.1.1] - 2026-10-20
 
 ### Changed

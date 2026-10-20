@@ -5,7 +5,7 @@
 ```bash
 python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q                                            # 44 tests, offline, CPU-only, ~1 min
+pytest -q                                            # 85 tests, offline, CPU-only, ~1 min
 ```
 
 The test suite deliberately needs **no** speaker models, no GPU and no network: backbones

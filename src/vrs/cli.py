@@ -29,6 +29,7 @@ from . import labeling as LB
 from . import pitch as PT
 from . import roles as RO
 from . import scoring as SC
+from .cast import CastError, load_cast, normalize
 from .config import Config, ConfigError
 from .models import BACKENDS, fetch_ecapa, l2
 
@@ -45,11 +46,7 @@ def cmd_init(args):
     for m in args.models or []:
         cfg.models = m.split(",")
     if args.roles_file:
-        data = json.loads(Path(args.roles_file).read_text("utf-8")) \
-            if args.roles_file.endswith(".json") else __import__("yaml").safe_load(
-            Path(args.roles_file).read_text("utf-8"))
-        cfg.roles = [[str(k), str(v)] for k, v in data["roles"].items()] if isinstance(data.get("roles"), dict) \
-            else [list(x) for x in data["roles"]]
+        cfg.roles = load_cast(args.roles_file)
     for s in args.set or []:
         k, _, v = s.partition("=")
         if not hasattr(cfg, k):
@@ -60,12 +57,16 @@ def cmd_init(args):
         elif isinstance(cur, list):
             import yaml
             v = yaml.safe_load(v)
+            if k == "roles":
+                v = normalize(v)      # assignment skips __post_init__, so validate here
         else:
             v = type(cur)(v) if cur is not None else v
         setattr(cfg, k, v)
     cfg.validate()
     f = cfg.save()
     print(f"run created: {f}\n  audio_dir : {cfg.audio_dir}\n  models    : {cfg.models}\n"
+          f"  roles     : {len(cfg.roles)} in the page dropdown "
+          f"({', '.join(v for v, _ in cfg.roles[:3])}{' …' if len(cfg.roles) > 3 else ''})\n"
           f"  device    : {cfg.resolved_device()}")
 
 
@@ -287,7 +288,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--audio-dir", required=True, help="folder of .wav lines")
     s.add_argument("--run-dir", default="runs/default")
     s.add_argument("--models", action="append", help='comma list, e.g. campplus,ecapa,eres2net')
-    s.add_argument("--roles-file", help="yaml/json with a roles list for the annotation dropdown")
+    s.add_argument("--roles-file", help="yaml/json role table (roles: {value: label}) - value is "
+                                       "the role id written to roles.csv and used as the export "
+                                       "folder name, label is what the page shows; validated here")
     s.add_argument("--set", action="append", metavar="KEY=VALUE", help="override any run.yaml field")
     s.set_defaults(fn=cmd_init)
 
@@ -356,6 +359,9 @@ def main(argv=None) -> int:
         args.fn(args)
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
+        return 2
+    except CastError as exc:
+        print(f"cast file error: {exc}", file=sys.stderr)
         return 2
     except (A.AudioError, EM.EmbedError) as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)

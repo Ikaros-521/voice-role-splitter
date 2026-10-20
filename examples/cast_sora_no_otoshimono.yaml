@@ -1,6 +1,22 @@
-# Example dropdown for the annotation page: value is what lands in roles.csv and folder
-# names; label is what the human sees (Japanese name + voice actor helps recognition).
-# Anything not listed is still reachable through the "其他/自定义" entry in the page.
+# Cast file for 天降之物 - 心跳的暑假 (7,055 lines, 6 named voices). Shape consumed by
+# `vrs init --roles-file` and stored as `roles:` in run.yaml.
+#
+#   value (left)  : the role id. It is written verbatim into roles.csv and becomes the export
+#                   folder roles/<value>/. Two clusters given the same value ARE one role,
+#                   which is the normal case - one character splits into several clusters by
+#                   emotion. Pick the name you want to keep on disk, in one language.
+#   label (right) : only what the human sees in the dropdown, so make it recognisable by ear:
+#                   original-language name + voice actor.
+#
+# The dropdown is a closed list - there is no free-text box, on purpose, because a typo would
+# silently create a second folder for the same character. So list every voice you expect to
+# hear, including the narrator and non-speech clips (the last two rows), and if you meet a
+# character that is missing: add the row, re-run `vrs page clusters` (names already assigned
+# live in browser storage and survive it), then export the CSV again.
+#
+# Rules checked at init: filesystem-safe (no \ / : * ? " < > |), no leading/trailing ".",
+# <= 60 chars, unique ignoring case, and not one of 未定 / 需复核 / unresolved.
+# Full spec: docs/USAGE.md#cast-file-role-vocabulary-of-the-annotation-page
 roles:
   伊卡洛斯: "イカロス（早見沙織）"
   樱井智树: "桜井智樹（保志総一朗）"

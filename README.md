@@ -84,6 +84,37 @@ vrs page review --run-dir runs/show1 # 待人工.html：剩下的按建议分组
 vrs export --run-dir runs/show1      # roles/<角色>/c<簇号>_<语气>/*.wav（默认硬链接）
 ```
 
+### 角色表（`--roles-file`）怎么构建
+
+`examples/cast_sora_no_otoshimono.yaml` 就是这份角色表：`vrs init` 读它、写进 `run.yaml` 的 `roles:`，
+它就是标注页面下拉菜单里的全部选项。
+
+```yaml
+roles:
+  伊卡洛斯: "イカロス（早見沙織）"   # 左＝落盘的角色 id；右＝只给人看的标签
+```
+
+- **左边 `value` 是身份标识**：原样进 `roles.csv` 的 `role` 列，并原样当作导出目录名
+  `roles/<value>/`。**两个簇起同一个名字 = 同一个角色**（这才是常态：一个角色会被情绪拆成好几簇）。
+  所以 value 一次定死：一种语言、不带装饰符，你想在磁盘上看到什么就写什么。
+- **右边 `label` 只影响听感效率**：建议「原文名（声优）」，2 秒一条地听时，声优名是最快能把两个
+  相似音色区分开的信息。
+- **下拉是闭集，页面没有自由输入框**——故意的：手打一个名字就是凭空新增一个角色，
+  `伊卡洛斯` / `イカロス` / `伊卡洛斯（天使）` 会静默变成三个文件夹。听到表里没有的角色，
+  就加一行 → 重跑 `vrs page clusters` → 重开页面。已命名的结果存在浏览器 `localStorage`
+  （键是 run 目录 + 模式，与角色表无关），重新生成页面不会丢；只有重跑 `vrs cluster` 会重排簇号，
+  那种情况先 `vrs apply` 把命名落盘。
+- **构建顺序**：① 从官方 staff 表 / wiki（Bangumi、VNDB、MyAnimeList）/ 游戏包装把角色名和**声优名**抄全，
+  ② 定 value 用哪种语言，③ 一个"声音"一行而不是一个"角色"一行——旁白/系统语音、纯音效各留一行兜底，
+  ④ 次要角色也先写上，宁可用不到也别在命名的中途卡住，⑤ `vrs init --roles-file` 会校验并打印
+  `roles : N in the page dropdown`，写错当场报第几条、为什么错。
+- **校验规则**（因为 value 要当目录名）：不含 `\ / : * ? " < > |`、不以 `.` 开头或结尾、
+  去空格后非空且 ≤60 字符、忽略大小写不重复、且不能占用 `未定` / `需复核` / `unresolved`
+  （这三个是流水线表示"还没定"的记号，拿去当角色名会让文件全跑进 `_未确定`）。
+- 同一份表可以写成 `[[value, label], …]` pairs、纯字符串列表，或者 `.json`；页面里 label 为空时
+  自动等于 value。跑完一轮后，`roles.csv` 的 `role` 列去个重就是下一部作品的角色表起点
+  （命令见 [docs/USAGE.md](docs/USAGE.md#cast-file-role-vocabulary-of-the-annotation-page)）。
+
 ## 工作流
 
 | 步骤 | 产物 | 谁说了算 |
@@ -141,7 +172,7 @@ vrs export --run-dir runs/show1      # roles/<角色>/c<簇号>_<语气>/*.wav�
 - [examples/](examples) — 一份角色表、一份 `apply` 期望的标注导出格式样例
 
 ```bash
-pytest -q     # 44 项，离线 + 纯 CPU，约 1 分钟；上面每个坑都有对应回归用例
+pytest -q     # 85 项，离线 + 纯 CPU，约 1 分钟；上面每个坑都有对应回归用例
 ```
 
 `docs/` 目前只有英文，欢迎翻译 PR。

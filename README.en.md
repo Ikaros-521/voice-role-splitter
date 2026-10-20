@@ -88,6 +88,46 @@ vrs page review --run-dir runs/show1   # 待人工.html : leftovers, grouped by 
 vrs export --run-dir runs/show1        # roles/<角色>/c<簇>_<语气>/*.wav (hard links)
 ```
 
+### The cast file (`--roles-file`)
+
+`examples/cast_sora_no_otoshimono.yaml` is that table: `vrs init` reads it into `roles:` in
+`run.yaml`, and `roles:` is the entire dropdown of the annotation page.
+
+```yaml
+roles:
+  伊卡洛斯: "イカロス（早見沙織）"   # value = the role id on disk; label = what the human reads
+```
+
+- **`value` is an identifier, not a caption.** It is written verbatim into the `role` column of
+  `roles.csv` and becomes the export folder `roles/<value>/`. Two clusters sharing a value
+  **are** one character - that is the normal case, since emotion splits one voice into several
+  clusters. Decide the spelling once, in one language, with nothing decorative: it is what you
+  will keep on disk.
+- **`label` only buys you listening speed.** Original name + voice actor works best: at two
+  seconds a clip, the actor name is the fastest way to tell two similar voices apart.
+- **The dropdown is a closed list, and there is no free-text box - on purpose.** A typed name
+  invents a role, and `伊卡洛斯` / `イカロス` / `伊卡洛斯（天使）` would quietly become three
+  folders. When you hear a voice that is missing: add the row, re-run `vrs page clusters`,
+  reopen the page. Names you already assigned live in browser `localStorage` keyed by run
+  directory + mode (not by the cast file), so they survive; only a re-run of `vrs cluster`
+  renumbers clusters - do `vrs apply` first if you have named a lot.
+- **How to build one**: ① copy the credited cast (official site, Bangumi/VNDB/MAL, box, or the
+  ISO's own text files) including every **voice actor name**, ② fix one language for `value`,
+  ③ one row per *voice*, not per character - narrator/system lines and SFX-only clips each get
+  a catch-all row so they cannot pollute a character folder, ④ list the secondary characters up
+  front; an unused row costs nothing, a missing one stops a naming session, ⑤ `vrs init
+  --roles-file` validates it and prints `roles : N in the page dropdown`, failing on the exact
+  entry instead of three steps later.
+- **Rules on `value`**, because it is a directory name: no `\\ / : * ? " < > |`, no leading or
+  trailing `.`, non-empty after trimming and ≤ 60 characters, unique ignoring case, and not one
+  of `未定` / `需复核` / `unresolved` (those mean "not decided yet"; claiming one would send the
+  files to `_未确定`).
+
+`[[value, label], ...]`, a bare list of strings and `.json` all parse the same way, and the
+`role` column of a finished `roles.csv`, de-duplicated, is the starting point for the next
+dataset from the same series. Full spec:
+[docs/USAGE.md#cast-file-role-vocabulary-of-the-annotation-page](docs/USAGE.md#cast-file-role-vocabulary-of-the-annotation-page).
+
 ## Workflow
 
 | step | artefact | who decides |
@@ -162,11 +202,9 @@ median length of **0.69 s** - some have no measurable pitch at all. Ship them as
 - [examples/](examples) - a cast file and a `labels_manual.csv` in the shape `apply` expects
 
 The docs under `docs/` are English-only for now; translation PRs welcome.
-- [CONTRIBUTING.md](CONTRIBUTING.md) - dev setup, the invariants a PR must not break, adding a backbone
-- [examples/](examples) - a cast file and a `labels_manual.csv` in the shape `apply` expects
 
 ```bash
-pytest -q            # 44 tests, offline + CPU-only, including a regression for every bug above
+pytest -q            # 85 tests, offline + CPU-only, including a regression for every bug above
 ```
 
 ## Data & licensing
@@ -178,5 +216,4 @@ problem even when the tool is MIT. Commit `run.yaml` and a cast YAML if you want
 configuration; keep the media local.
 
 MIT licensed; see [LICENSE](LICENSE). CI runs the suite on Linux and Windows, Python 3.10-3.12
-([.github/workflows/tests.yml](.github/workflows/tests.yml)). CI runs the suite on Linux and Windows, Python 3.10-3.12
 ([.github/workflows/tests.yml](.github/workflows/tests.yml)).

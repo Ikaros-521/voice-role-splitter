@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-role-splitter"
-version = "0.1.1"
+version = "0.2.0"
 description = "Split a folder of character voice lines into roles: speaker-embedding clustering, human-in-the-loop confirmation, calibrated re-scoring of the leftovers, and per-role/per-tone folder export."
 readme = "README.md"
 requires-python = ">=3.9"
