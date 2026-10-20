@@ -122,11 +122,9 @@ class Config:
             return "cpu"
 
     def resolved_model_dir(self) -> Path:
-        """weights live outside the run dir: speechbrain symlinks into its savedir, so a
-        weights folder inside a run makes the run un-copyable, and runs should be copyable."""
-        if self.model_dir:
-            return Path(self.model_dir)
-        env = os.environ.get("VRS_MODEL_DIR")
-        if env:
-            return Path(env)
-        return Path.home() / ".cache" / "vrs" / "models"
+        """download target when discovery finds nothing - see vrs.cache for the full order.
+
+        Never inside a run dir: speechbrain symlinks into its savedir, so a run that holds
+        weights stops being copyable."""
+        from .cache import download_root
+        return download_root(self)

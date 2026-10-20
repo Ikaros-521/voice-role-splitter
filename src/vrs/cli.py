@@ -111,11 +111,17 @@ def cmd_probe(args):
 def cmd_backends(args):
     cfg = Config.load(args.run_dir) if (Path(args.run_dir) / "run.yaml").exists() else Config(audio_dir=".")
     if args.fetch:
-        print(f"ecapa weights -> {fetch_ecapa(Path(cfg.resolved_model_dir()), endpoint=args.endpoint)}")
-    print(f"model cache: {cfg.resolved_model_dir()}   device: {cfg.resolved_device()}")
+        print(f"ecapa weights -> {fetch_ecapa(cfg, endpoint=args.endpoint)}")
+    print(f"device: {cfg.resolved_device()}   "
+          f"download root when nothing is cached: {cfg.resolved_model_dir()}")
+    print("search order: run.yaml model_dir > $VRS_MODEL_DIR > $MODELSCOPE_CACHE > "
+          "~/.cache/modelscope > $HF_HOME / $HF_HUB_CACHE > ~/.cache/huggingface > ./models")
     for name, cls in BACKENDS.items():
-        s = cls.status(cfg)
-        print(f"  {name:<10} {s}" + ("" if s == "ready" else f"\n{'':<14}install: {cls.hint}"))
+        st = cls.status(cfg)
+        print(f"  {name:<10} {st}")
+        print(f"  {'':<10} {cls.where(cfg)}")
+        if st != "ready":
+            print(f"  {'':<10} install: {cls.hint}")
     print("\nrun.yaml `models` should list the ready ones.")
 
 

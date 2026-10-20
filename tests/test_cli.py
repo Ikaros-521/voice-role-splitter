@@ -63,24 +63,42 @@ def test_backends_reports_without_a_run(tmp_path, capsys):
     assert "campplus" in out and "install:" in out or "ready" in out
 
 
+class FakeBackend:
+    """one 8-d vector per window: two loudness groups, so clustering has real signal"""
+
+    def __init__(self, cfg):
+        pass
+
+    def __call__(self, wins):
+        out = np.zeros((len(wins), 8), np.float32)
+        for i, w in enumerate(wins):
+            hot = float(np.sqrt(np.mean(w ** 2))) > 0.35
+            out[i, 0 if hot else 1] = 1.0
+            out[i, 2 + (i % 3)] += 0.01
+        return out
+
+
+def test_embed_reuse_still_reports_health(tmp_path, monkeypatch, capsys):
+    """the second run must not skip the check that catches inflated (broken-ingest) embeddings"""
+    import json
+    import vrs.embed as EM
+    audio = make_audio(tmp_path, n=6, sec=2.0)
+    run("init", "--audio-dir", str(audio), "--run-dir", str(tmp_path / "r"), "--models", "fake")
+    monkeypatch.setitem(EM.BACKENDS, "fake", FakeBackend)
+    assert run("embed", "--run-dir", str(tmp_path / "r")) == 0
+    first = json.loads((tmp_path / "r" / "embeddings" / "manifest.json").read_text("utf-8"))
+    capsys.readouterr()
+    assert run("embed", "--run-dir", str(tmp_path / "r")) == 0
+    out = capsys.readouterr().out
+    assert "reuse" in out and "cosine" in out
+    second = json.loads((tmp_path / "r" / "embeddings" / "manifest.json").read_text("utf-8"))
+    assert second["last_health"]["note"] == first["last_health"]["note"]
+
+
 def test_page_clusters_after_a_synthetic_cluster_run(tmp_path, monkeypatch):
     """init -> embed -> cluster -> page, with the speaker backends replaced by a stub"""
     audio = make_audio(tmp_path, n=12, sec=2.5)
     run("init", "--audio-dir", str(audio), "--run-dir", str(tmp_path / "r"), "--models", "fake")
-
-    class FakeBackend:
-        """returns one 8-d vector per window: two loudness groups, so clustering has signal"""
-        def __init__(self, cfg):
-            pass
-
-        def __call__(self, wins):
-            # two genuinely separate groups by loudness, so clustering has real signal
-            out = np.zeros((len(wins), 8), np.float32)
-            for i, w in enumerate(wins):
-                hot = float(np.sqrt(np.mean(w ** 2))) > 0.35
-                out[i, 0 if hot else 1] = 1.0
-                out[i, 2 + (i % 3)] += 0.01
-            return out
 
     import vrs.embed as EM
     monkeypatch.setitem(EM.BACKENDS, "fake", FakeBackend)

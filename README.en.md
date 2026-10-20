@@ -59,6 +59,13 @@ vrs backends --run-dir runs/show1 --fetch ecapa
 
 GPU is optional (CPU works, ~10x slower). Everything is local - no uploads, no API keys.
 
+**Where weights go**: existing caches are searched first (`model_dir` in `run.yaml` >
+`$VRS_MODEL_DIR` > `$MODELSCOPE_CACHE` > `~/.cache/modelscope` > `$HF_HOME`/`$HF_HUB_CACHE` >
+`~/.cache/huggingface` > `./models` in the project) and reused as-is - nothing is downloaded
+twice. Only when nothing is found does it fetch into the project's own `models/` directory
+(visible, git-ignored) instead of dumping it on the system drive. Redirect with
+`--set model_dir=D:/weights` or `VRS_MODEL_DIR`.
+
 ## Quick start
 
 ```bash

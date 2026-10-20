@@ -15,6 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import cache
+
 
 class BackendError(RuntimeError):
     pass
@@ -34,8 +36,25 @@ class Backend:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.model_dir = cfg.resolved_model_dir()
-        self.model_dir.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def where(cls, cfg) -> str:
+        """answer "where are my weights" for `vrs backends`, without downloading anything"""
+        found = cache.locate(cls.name, cfg)
+        if found:
+            return f"cached -> {found[1]}"
+        return f"not cached, would fetch into {cls.fetch_target(cfg)}"
+
+    @classmethod
+    def fetch_target(cls, cfg) -> Path:
+        """where a download would land: project-local `models/`, not the system drive"""
+        return cache.download_root(cfg)
+
+    @classmethod
+    def cache_root(cls, cfg) -> Path:
+        """the root MODELSCOPE_CACHE must point at so existing weights get reused"""
+        found = cache.locate(cls.name, cfg)
+        return found[0] if found else cache.download_root(cfg)
 
     @classmethod
     def status(cls, cfg) -> str:
@@ -66,7 +85,7 @@ class CampPlus(Backend):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        os.environ.setdefault("MODELSCOPE_CACHE", str(self.model_dir))
+        os.environ["MODELSCOPE_CACHE"] = str(self.cache_root(cfg))
         from funasr import AutoModel
         self.m = AutoModel(model=self.repo, disable_update=True, device=cfg.resolved_device())
 
@@ -93,9 +112,9 @@ class Ecapa(Backend):
     @classmethod
     def _probe(cls, cfg):
         import speechbrain  # noqa: F401
-        d = Path(cfg.resolved_model_dir()) / "ecapa"
-        if not (d / "embedding_model.ckpt").exists():
-            raise BackendError(f"weights missing under {d}; run: vrs backends --fetch ecapa")
+        if not cache.find("ecapa", cfg):
+            raise BackendError(f"weights not in any cache; run: vrs backends --fetch ecapa "
+                               f"(downloads into {cls.fetch_target(cfg) / 'ecapa'})")
 
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -103,13 +122,16 @@ class Ecapa(Backend):
             from speechbrain.inference.speaker import EncoderClassifier
         except ImportError:                     # speechbrain < 1.0
             from speechbrain.pretrained import EncoderClassifier
-        d = str(self.model_dir / "ecapa")
+        found = cache.find("ecapa", cfg)
+        if not found:
+            raise BackendError("ECAPA weights not found; run: vrs backends --fetch ecapa")
+        d = str(found)
         missing = [f for f in self.files if not (Path(d) / f).exists()]
         if missing:
             raise BackendError(f"missing {missing} in {d}; run: vrs backends --fetch ecapa")
         # savedir == source dir is what makes speechbrain resolve the local .ckpt instead of
-        # delegating to the Hub; the folder is outside the run dir precisely because it
-        # symlinks files into itself and is therefore not something to copy around.
+        # delegating to the Hub. A fetched dir accumulates self-referential symlinks, which
+        # is another reason weights never go inside a run dir (those must stay copyable).
         self.m = EncoderClassifier.from_hparams(source=d, hparams_file="hyperparams.yaml",
                                                 savedir=d, run_opts={"device": cfg.resolved_device()})
         self.device = cfg.resolved_device()
@@ -139,7 +161,7 @@ class ERes2Net(Backend):
 
     def __init__(self, cfg):
         super().__init__(cfg)
-        os.environ.setdefault("MODELSCOPE_CACHE", str(self.model_dir))
+        os.environ["MODELSCOPE_CACHE"] = str(self.cache_root(cfg))
         from modelscope.pipelines import pipeline
         from modelscope.utils.constant import Tasks
         self.pipe = pipeline(task=Tasks.speaker_verification, model=self.repo,
@@ -159,11 +181,18 @@ class ERes2Net(Backend):
 BACKENDS = {c.name: c for c in (CampPlus, Ecapa, ERes2Net)}
 
 
-def fetch_ecapa(model_dir: Path, endpoint: str = "https://hf-mirror.com", retries: int = 4) -> Path:
+def fetch_ecapa(cfg=None, endpoint: str = "https://hf-mirror.com", retries: int = 4) -> Path:
     """Pull the ECAPA snapshot with retries: anonymous mirrors rate-limit (HTTP 429) and a
-    plain retry loop is enough; huggingface.co itself is often unreachable in CN networks."""
+    plain retry loop is enough; huggingface.co itself is often unreachable in CN networks.
+
+    Reuses an existing copy wherever it was found - discovery first, download last.
+    """
     import subprocess
-    d = Path(model_dir) / "ecapa"
+    existing = cache.find("ecapa", cfg)
+    if existing:
+        print(f"  already cached: {existing}")
+        return existing
+    d = cache.download_root(cfg) / "ecapa"
     d.mkdir(parents=True, exist_ok=True)
     for f in Ecapa.files:
         dst = d / f

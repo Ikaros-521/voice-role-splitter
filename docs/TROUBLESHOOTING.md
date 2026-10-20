@@ -45,10 +45,14 @@ py-spy dump --pid <pid>          # tells you instantly whether it is looping
   `https://hf-mirror.com`, and `--fetch` retries because anonymous mirror requests get
   **HTTP 429** quite often. Re-running `vrs backends --fetch ecapa` finishes what a previous
   attempt left short (files under ~1 KB are treated as failures).
-- Weights live outside the run dir (`~/.cache/vrs/models`, or `VRS_MODEL_DIR` / `model_dir`).
-  That is deliberate: speechbrain symlinks into its own `savedir`, so a weights folder
-  inside a run makes the run un-copyable (`cp` fails with "Too many levels of symbolic
-  links"). Copying or archiving a run dir should never touch weights.
+- Weights are discovered before they are downloaded (see "Model weights" in USAGE.md), so a
+  machine that already has them in a ModelScope or Hugging Face cache will not re-fetch. With
+  nothing cached, they land in `./models` of the project you are working in - or in whatever
+  root you configured (`model_dir` in `run.yaml`, `VRS_MODEL_DIR`, `MODELSCOPE_CACHE`) - not on
+  the system drive. They never go inside a run dir: speechbrain symlinks into its own
+  `savedir`, which would make the run un-copyable (`cp` failing with "Too many levels of
+  symbolic links" is that trap). A partial download is ignored (files under ~1 KB are treated
+  as failures) and simply re-fetched.
 - ModelScope downloads need no token. Gated models (`pyannote/*`) do - and their pipelines
   pull a heavy dependency stack, which is why this tool avoids them: the backbones here are
   enough and run offline once fetched.

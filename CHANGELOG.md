@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), versioning follows SemVer.
 
+## [0.1.1] - 2026-10-20
+
+### Changed
+
+- **Model weights no longer default to the system drive.** Backends now search existing
+  caches first (`model_dir` > `$VRS_MODEL_DIR` > `$MODELSCOPE_CACHE` > `~/.cache/modelscope` >
+  `$HF_HOME`/`$HF_HUB_CACHE` > `~/.cache/huggingface` > project `./models`) and reuse whatever
+  is already there, so nothing gets downloaded twice; when nothing exists, the download target
+  is the configured cache root or the project's own `models/`. `vrs backends` prints the search
+  order and, per backend, `cached -> <path>` or `not cached, would fetch into <path>`.
+- A configured `$MODELSCOPE_CACHE` is honoured as the write target too, so weights do not end
+  up split across two roots.
+- Re-running `vrs embed` against cached `.npy` files now still runs the embedding health check
+  (it used to skip straight past it, so a corpus with a broken ingest path stopped being flagged
+  after the first run).
+
+### Fixed
+
+- `vrs embed` crashed with `UnboundLocalError: health` whenever a backend came from cache or
+  every backend was skipped, instead of reporting a health note or a clean error.
+- A truncated ECAPA stub (partial download) was treated as a cached model; locations now need
+  the real checkpoints before being used.
+
 ## [0.1.0] - 2026-10-19
 
 First public release, extracted from a production run over 7,055 character voice lines

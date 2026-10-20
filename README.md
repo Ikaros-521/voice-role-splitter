@@ -56,6 +56,12 @@ vrs backends --run-dir runs/show1 --fetch ecapa  # 拉权重（镜像常 429 限
 
 GPU 可选（CPU 能跑，慢约 10 倍）。全程本地，不上传、不需要 API key。
 
+**权重存放**：先在机器上已有的缓存里找（`run.yaml` 的 `model_dir` > `$VRS_MODEL_DIR` >
+`$MODELSCOPE_CACHE` > `~/.cache/modelscope` > `$HF_HOME`/`$HF_HUB_CACHE` >
+`~/.cache/huggingface` > 项目内 `./models`），**找到就直接复用，绝不重复下载**；确实没有时，
+默认下载到**项目目录下的 `models/`**（跟着仓库走、看得见、`gitignore` 已排除），而不是丢进 C 盘。
+想换地方就用 `--set model_dir=D:/weights` 或设 `VRS_MODEL_DIR`。
+
 ## 快速开始
 
 ```bash

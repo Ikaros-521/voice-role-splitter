@@ -35,7 +35,7 @@ min_speech: 0.6                       # shorter than this -> no embedding at all
 cluster_min_speech: 1.0               # shorter than this -> excluded from clustering
 trim_db: 35.0                         # leading/trailing silence cut
 models: [campplus, ecapa]             # backbones to fuse
-model_dir: ""                         # "" -> ~/.cache/vrs/models (VRS_MODEL_DIR honoured)
+model_dir: ""                         # "" -> see "Model weights" below; else this path
 device: auto                          # auto | cpu | cuda:0
 linkage: average                      # average | complete | single
 score: asnorm                         # asnorm | cosine
@@ -68,6 +68,28 @@ roles:
 
 Keep values filesystem-safe and stable - they become directory names. The page also allows
 free text, and exports a UTF-8-BOM CSV (`labels_manual.csv`) which is what `apply` reads.
+
+## Model weights
+
+Discovery runs before download, in this order:
+
+1. `model_dir` in `run.yaml`
+2. `$VRS_MODEL_DIR`
+3. `$MODELSCOPE_CACHE`
+4. `~/.cache/modelscope/hub`, then `~/.cache/modelscope`
+5. `$HF_HUB_CACHE` / `$HF_HOME`, then `~/.cache/huggingface` (an ECAPA snapshot there is used directly)
+6. `./models` in the current project
+7. `~/.cache/vrs/models`, and `<run>/models` as a last look
+
+A location only counts if the weights are really there (for ECAPA that means
+`hyperparams.yaml` + `embedding_model.ckpt` above 1 KB - a truncated stub from a failed
+download is ignored so the fetch can resume instead of loading garbage). If nothing is
+found, the download target is the first configured cache root, else `./models` next to
+where you run the command. `vrs backends` prints both the search order and, per backend,
+whether it is `cached -> <path>` or `not cached, would fetch into <path>`.
+
+Weights are never placed inside a run directory: speechbrain symlinks into its own savedir,
+which would make the run un-copyable.
 
 ## The annotation pages
 

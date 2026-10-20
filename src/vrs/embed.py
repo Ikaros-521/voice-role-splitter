@@ -48,7 +48,8 @@ def embed(cfg, models=None, progress=500) -> dict:
     files, counts, trimmed, wins, loud = collect_windows(cfg)
     np.savez_compressed(cfg.path("meta.npz"), files=np.array(files),
                         nwindow=np.asarray(counts, np.int32), speech_sec=trimmed, rms=loud)
-    out = {}
+    out: dict = {}
+    health = None
     for name in models:
         if name not in BACKENDS:
             raise EmbedError(f'unknown backend "{name}"; available: {", ".join(BACKENDS)}')
@@ -56,7 +57,8 @@ def embed(cfg, models=None, progress=500) -> dict:
         if target.exists():
             F = np.load(target)
             if len(F) == len(files):
-                print(f"{name}: reuse {target.name} {F.shape}", flush=True)
+                health = check_health(F, name)
+                print(f"{name}: reuse {target.name} {F.shape} | {health['note']}", flush=True)
                 out[name] = F
                 continue
             print(f"{name}: stale file ({len(F)} rows != {len(files)}), recomputing", flush=True)
